@@ -2,6 +2,9 @@ import os
 import torch
 from openvoice import se_extractor
 from openvoice.api import ToneColorConverter
+import subprocess
+import tempfile
+import soundfile as sf
 
 
 ckpt_converter = 'checkpoints_v2/converter'
@@ -37,42 +40,22 @@ src_path = f'{output_dir}/tmp.wav'
 # Speed is adjustable
 speed = 1.0
 
-# for language, text in texts.items():
-#     model = TTS(language=language, device=device)
-#     speaker_ids = model.hps.data.spk2id
-    
-#     for speaker_key in speaker_ids.keys():
-#         speaker_id = speaker_ids[speaker_key]
-#         speaker_key = speaker_key.lower().replace('_', '-')
-        
-#         source_se = torch.load(f'checkpoints_v2/base_speakers/ses/{speaker_key}.pth', map_location=device)
-#         if torch.backends.mps.is_available() and device == 'cpu':
-#             torch.backends.mps.is_available = lambda: False
-#         model.tts_to_file(text, speaker_id, src_path, speed=speed)
-#         save_path = f'{output_dir}/output_v2_{speaker_key}.wav'
-
-#         # Run the tone color converter
-#         encode_message = "@MyShell"
-#         tone_color_converter.convert(
-#             audio_src_path=src_path, 
-#             src_se=source_se, 
-#             tgt_se=target_se, 
-#             output_path=save_path,
-#             message=encode_message)
+# Options
+SAVE_WAV = False
+PLAY_AUDIO = True
 
 
-language, text = 'EN', 'Wah-way is a pretty good company. Did you ever hear that? It is so true that Wah-way is a pretty good company.'
-# language, text = 'EN', 'Wah-way!'
+# language, text = 'EN', 'Wah-way is a pretty good company. Did you ever hear that? It is so true that Wah-way is a pretty good company.'
+language, text = 'EN', 'Wah-way!'
 model = TTS(language=language, device=device)
 speaker_ids = model.hps.data.spk2id
 
 print(speaker_ids.keys()) ## dict_keys(['EN-US', 'EN-BR', 'EN_INDIA', 'EN-AU', 'EN-Default'])
 speaker_key = 'EN-US'
 
+
 speaker_id = speaker_ids[speaker_key]
 speaker_key = speaker_key.lower().replace('_', '-')
-
-
 
 
 source_se = torch.load(f'checkpoints_v2/base_speakers/ses/{speaker_key}.pth', map_location=device)
@@ -80,21 +63,45 @@ if torch.backends.mps.is_available() and device == 'cpu':
     torch.backends.mps.is_available = lambda: False
 
 
+
 import time
 time_start = time.time()
 
 model.tts_to_file(text, speaker_id, src_path, speed=speed)
-save_path = f'{output_dir}/output_v5long_{speaker_key}.wav'
-# save_path = f'{output_dir}/output_v5short_{speaker_key}.wav'
+
+time_middle = time.time()
+print(f'TTS time: {time_middle - time_start}')
+
 
 # Run the tone color converter
 encode_message = "@MyShell"
-tone_color_converter.convert(
+converted_audio = tone_color_converter.convert(
     audio_src_path=src_path, 
     src_se=source_se, 
     tgt_se=target_se, 
-    output_path=save_path,
+    output_path=None,
     message=encode_message)
+
+# Print basic info about the returned audio array
+print(f"Converted audio returned: samples={len(converted_audio)}, dtype={converted_audio.dtype}, sr={tone_color_converter.hps.data.sampling_rate}")
+
+# Optionally save WAV and/or play audio
+sample_rate = tone_color_converter.hps.data.sampling_rate
+save_path = f'{output_dir}/output_v6_{speaker_key}.wav'
+if SAVE_WAV:
+    sf.write(save_path, converted_audio, sample_rate)
+    print(f"Saved converted audio to: {save_path}")
+
+
+# Play with a temporary WAV file (no persistent save)
+with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmpf:
+    temp_wav_path = tmpf.name
+sf.write(temp_wav_path, converted_audio, sample_rate)
+subprocess.run(['afplay', temp_wav_path], check=False)
+try:
+    os.remove(temp_wav_path)
+except Exception:
+    pass
 
 
 time_end = time.time()
